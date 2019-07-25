@@ -2,6 +2,6 @@
 <Workspace
    version = "1.0">
    <FileRef
-      location = "self:DYSwiftHelpers.xcodeproj">
+      location = "self:/Users/drozdovsky/Projects/DRYSwiftHelpers/DRYSwiftHelpers.xcodeproj">
    </FileRef>
 </Workspace>
