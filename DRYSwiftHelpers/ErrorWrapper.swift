@@ -20,6 +20,7 @@ public class ErrorWrapper: Error, LocalizedError {
     }
 }
 
+@discardableResult
 public func wrapError<T>(_ routine: @autoclosure () throws -> T) throws -> T {
     do {
         return try routine()

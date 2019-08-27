@@ -5,39 +5,123 @@
 
 import Dispatch
 
-public protocol AsyncContext {
-    func suspend()
-    func resume()
-    func sleep(forTimeInterval timeInterval: TimeInterval)
-}
+public class AsyncContext {
+    private var semaphore = DispatchSemaphore(value: 0)
 
-public class AsyncTask<T>: AsyncContext {
-    private enum Result {
-        case value(T)
-        case error(Error)
+    fileprivate init() {
     }
 
-    private var didRun = false
+    public func suspend() {
+        _ = semaphore.wait(timeout: .distantFuture)
+    }
+
+    private func suspend(timeout: DispatchTime) -> Bool {
+        let waitResult = semaphore.wait(timeout: timeout)
+        return waitResult == .timedOut
+    }
+
+    public func resume() {
+        semaphore.signal()
+    }
+
+    public func sleep(forTimeInterval timeInterval: TimeInterval) {
+        Thread.sleep(forTimeInterval: timeInterval)
+    }
+
+    @discardableResult
+    public func wait<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture) throws -> T {
+        task.onResult { result in
+            self.resume()
+        }
+        let timedOut = suspend(timeout: timeout)
+
+        if timedOut {
+            throw DRYSwiftHelpersError.asyncTaskTimeout
+        }
+
+        switch task.result! {
+        case .value(let value):
+            return value
+        case .error(let error):
+            throw error
+        }
+    }
+
+    @discardableResult
+    public func wait(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, throwFirstError: Bool = false) throws -> [Result<Any>] {
+        let results = Atomic([Result<Any>]())
+        let firstError = Atomic<Error?>(nil)
+        for task in tasks {
+            task.onResult { result in
+                var resume = false
+                results.synchronized { results in
+                    results.append(result)
+                    if results.count == tasks.count {
+                        resume = true
+                    } else if throwFirstError == true, case let Result.error(error) = result {
+                        firstError.synchronized { firstError in
+                            if firstError == nil {
+                                firstError = error
+                            }
+                        }
+                        resume = true
+                    }
+                    if resume == true {
+                        self.resume()
+                    }
+                }
+            }
+        }
+        let timedOut = self.suspend(timeout: timeout)
+        if timedOut {
+            throw DRYSwiftHelpersError.asyncTaskTimeout
+        }
+        if let error = firstError.value {
+            throw error
+        }
+        return results.value
+    }
+}
+
+public protocol AsyncResultProvider {
+    func onResult(_ block: @escaping (Result<Any>) -> Void)
+}
+
+public enum Result<T> {
+    case value(T)
+    case error(Error)
+}
+
+public class AsyncTask<T>: AsyncResultProvider {
+    fileprivate var didRun = false
     private let lock = Lock()
     private var job: ((AsyncContext) throws -> T)
     private var catchBlocks = [(Error) -> Void]()
     private var successBlocks = [(T) -> Void]()
     private var finallyBlocks = [() -> Void]()
-    private let dispatchGroup = DispatchGroup()
-    private var semaphore = DispatchSemaphore(value: 0)
-    private var result: Result?
+    private var completionBlocks = [(Result<Any>) -> Void]()
+    fileprivate let dispatchGroup = DispatchGroup()
+    public private(set) var result: Result<T>?
+
+    public var resultValue: T? {
+        if let result = self.result, case Result<T>.value(let value) = result {
+            return value
+        } else {
+            return nil
+        }
+    }
+
+    public var resultError: Error? {
+        if let result = self.result, case Result<T>.error(let error) = result {
+            return error
+        } else {
+            return nil
+        }
+    }
 
     public init(_ job: @escaping (AsyncContext) throws -> T) {
         self.job = job
     }
-
-/*
-    @discardableResult
-    static func run<U>(_ job: @escaping (Task<U>) throws -> U) -> Task<U> {
-        let task = Task<U>(job)
-        return task.run()
-    }
-*/
 
     @discardableResult
     public func run() -> AsyncTask<T> {
@@ -49,29 +133,45 @@ public class AsyncTask<T>: AsyncContext {
         }
         DispatchQueue.global().async(group: dispatchGroup) {
             do {
-                let value = try self.job(self)
-                    self.lock.synchronized {
-                        if self.result == nil {
-                            self.result = .value(value)
+                let value = try self.job(AsyncContext())
+                self.lock.synchronized {
+                    if self.result == nil {
+                        self.result = .value(value)
+                        for completionBlock in self.completionBlocks {
+                            completionBlock(Result.value(value))
+                        }
+                        let successBlocks = self.successBlocks
+                        let finallyBlocks = self.finallyBlocks
+                        if successBlocks.count > 0 || finallyBlocks.count > 0 {
                             DispatchQueue.main.async(group: self.dispatchGroup) {
-                                for block in self.successBlocks {
+                                for block in successBlocks {
                                     block(value)
                                 }
-                                for block in self.finallyBlocks {
+                                for block in finallyBlocks {
                                     block()
                                 }
                             }
                         }
                     }
-                } catch {
-                DispatchQueue.main.async(group: self.dispatchGroup) {
-                    self.lock.synchronized {
+                }
+            } catch {
+                self.lock.synchronized {
+                    if self.result == nil {
                         self.result = .error(error)
-                        for block in self.catchBlocks {
-                            block(error)
+                        for completionBlock in self.completionBlocks {
+                            completionBlock(Result.error(error))
                         }
-                        for block in self.finallyBlocks {
-                            block()
+                        let catchBlocks = self.catchBlocks
+                        let finallyBlocks = self.finallyBlocks
+                        if catchBlocks.count > 0 || finallyBlocks.count > 0 {
+                            DispatchQueue.main.async(group: self.dispatchGroup) {
+                                for block in self.catchBlocks {
+                                    block(error)
+                                }
+                                for block in self.finallyBlocks {
+                                    block()
+                                }
+                            }
                         }
                     }
                 }
@@ -113,33 +213,17 @@ public class AsyncTask<T>: AsyncContext {
         return self
     }
 
-    public func suspend() {
-        _ = semaphore.wait(timeout: .distantFuture)
-    }
-
-    public func resume() {
-        semaphore.signal()
-    }
-
-    public func sleep(forTimeInterval timeInterval: TimeInterval) {
-        Thread.sleep(forTimeInterval: timeInterval)
-    }
-
-    public func wait(timeout: DispatchTime = .distantFuture) throws -> T {
-        assert(Thread.isMainThread == false)
-        let waitResult = dispatchGroup.wait(timeout: timeout)
+    public func onResult(_ block: @escaping (Result<Any>) -> Void) {
         self.lock.synchronized {
-            if self.result == nil {
-                if waitResult == .timedOut {
-                    self.result = .error(DRYSwiftHelpersError.asyncTaskTimeout)
+            self.completionBlocks.append(block)
+            if let result = self.result {
+                switch result {
+                case .value(let value):
+                    block(Result.value(value))
+                case .error(let error):
+                    block(Result.error(error))
                 }
             }
-        }
-        switch result! {
-        case .value(let value):
-            return value
-        case .error(let error):
-            throw error
         }
     }
 }
@@ -150,10 +234,3 @@ public func async<T>(_ job: @escaping (AsyncContext) throws -> T) -> AsyncTask<T
     task.run()
     return task
 }
-
-/*
-@discardableResult
-public func wait<A, B>(_ taskA: AsyncTask<A>, _ taskB: AsyncTask<B>) throws -> (A, B) {
-
-}
-*/
