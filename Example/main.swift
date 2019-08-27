@@ -9,10 +9,13 @@
 import Foundation
 import DRYSwiftHelpers
 
-async { task -> String? in
+async { asyncContext -> String? in
     print("Hello from background thread")
-    let urlRequest = URLRequest(url: URL(string: "http://worldclockapi2.com/api/json/utc/now2")!, timeoutInterval: 5.0)
-    let data = try urlRequest.getData(asyncContext: task)
+    let data = try async { innerAsyncContext -> Data in
+        let urlRequest = URLRequest(url: URL(string: "http://worldclockapi2.com/api/json/utc/now2")!, timeoutInterval: 5.0)
+        let data = try urlRequest.getData(asyncContext: innerAsyncContext)
+        return data
+    }.wait(timeout: .now() + 5.0)
     return String(data: data, encoding: .utf8)
 }.onSuccess { string in
     print("response: \(string ?? "nil")")

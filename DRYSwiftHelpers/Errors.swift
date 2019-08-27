@@ -6,6 +6,7 @@
 import Foundation
 
 public enum DRYSwiftHelpersError: Error {
+    case asyncTaskTimeout
     case httpInvalidResponse
     case httpBadStatusCode(statusCode: Int, data: Data?)
 
