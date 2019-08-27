@@ -15,9 +15,8 @@ public enum DRYSwiftHelpersError: Error {
         case .httpBadStatusCode(let statusCode, let data):
             if data != nil, let errorString = String(data: data!, encoding: .utf8) {
                 return "httpBadStatusCode(statusCode: \(statusCode), data: '\(errorString)'"
-            } else {
-                return String(describing: self)
             }
+            fallthrough
         default:
             return String(describing: self)
         }
