@@ -50,18 +50,20 @@ public class AsyncTask<T>: AsyncContext {
         DispatchQueue.global().async(group: dispatchGroup) {
             do {
                 let value = try self.job(self)
-                DispatchQueue.main.async(group: self.dispatchGroup) {
                     self.lock.synchronized {
-                        self.result = .value(value)
-                        for block in self.successBlocks {
-                            block(value)
-                        }
-                        for block in self.finallyBlocks {
-                            block()
+                        if self.result == nil {
+                            self.result = .value(value)
+                            DispatchQueue.main.async(group: self.dispatchGroup) {
+                                for block in self.successBlocks {
+                                    block(value)
+                                }
+                                for block in self.finallyBlocks {
+                                    block()
+                                }
+                            }
                         }
                     }
-                }
-            } catch {
+                } catch {
                 DispatchQueue.main.async(group: self.dispatchGroup) {
                     self.lock.synchronized {
                         self.result = .error(error)
@@ -123,9 +125,16 @@ public class AsyncTask<T>: AsyncContext {
         Thread.sleep(forTimeInterval: timeInterval)
     }
 
-    public func wait() throws -> T {
+    public func wait(timeout: DispatchTime = .distantFuture) throws -> T {
         assert(Thread.isMainThread == false)
-        dispatchGroup.wait()
+        let waitResult = dispatchGroup.wait(timeout: timeout)
+        self.lock.synchronized {
+            if self.result == nil {
+                if waitResult == .timedOut {
+                    self.result = .error(DRYSwiftHelpersError.asyncTaskTimeout)
+                }
+            }
+        }
         switch result! {
         case .value(let value):
             return value
@@ -141,3 +150,10 @@ public func async<T>(_ job: @escaping (AsyncContext) throws -> T) -> AsyncTask<T
     task.run()
     return task
 }
+
+/*
+@discardableResult
+public func wait<A, B>(_ taskA: AsyncTask<A>, _ taskB: AsyncTask<B>) throws -> (A, B) {
+
+}
+*/
