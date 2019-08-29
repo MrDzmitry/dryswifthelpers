@@ -9,6 +9,14 @@
 import Foundation
 import DRYSwiftHelpers
 
+func getCurrentTime() -> AsyncTask<String> {
+    return AsyncTask<String> { asyncContext in
+        let urlRequest = URLRequest(url: URL(string: "http://worldclockapi.com/api/json/utc/now")!, timeoutInterval: 5.0)
+        let data = try urlRequest.getData().await(asyncContext)
+        return data
+    }
+}
+
 async { asyncContext -> String? in
     print("Hello from background thread")
 
@@ -28,7 +36,7 @@ async { asyncContext -> String? in
         return data
     }
 
-    try wrapError(asyncContext.wait(tasks: [dataTask1, dataTask2, dataTask3], timeout: .now() + 1.0, throwFirstError: false))
+    try wrapError(asyncContext.await(tasks: [dataTask1, dataTask2, dataTask3], timeout: .now() + 1.0, throwFirstError: false))
     let data = dataTask1.resultValue!
 
     return String(data: data, encoding: .utf8)

@@ -29,7 +29,7 @@ public class AsyncContext {
     }
 
     @discardableResult
-    public func wait<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture) throws -> T {
+    public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture) throws -> T {
         task.onResult { result in
             self.resume()
         }
@@ -48,7 +48,7 @@ public class AsyncContext {
     }
 
     @discardableResult
-    public func wait(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, throwFirstError: Bool = false) throws -> [Result<Any>] {
+    public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, throwFirstError: Bool = false) throws -> [Result<Any>] {
         let results = Atomic([Result<Any>]())
         let firstError = Atomic<Error?>(nil)
         for task in tasks {
@@ -124,7 +124,7 @@ public class AsyncTask<T>: AsyncResultProvider {
     }
 
     @discardableResult
-    public func run() -> AsyncTask<T> {
+    public func run(_ asyncContext: AsyncContext? = nil) -> AsyncTask<T> {
         self.lock.synchronized {
             if self.didRun {
                 fatalError("AsyncTask can run only once.")
