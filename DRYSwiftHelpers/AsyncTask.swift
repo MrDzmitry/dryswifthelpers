@@ -13,7 +13,7 @@ public enum Result<T> {
 public class AsyncContext {
     private var semaphore = DispatchSemaphore(value: 0)
 
-    func suspend() {
+    public func suspend() {
         _ = semaphore.wait(timeout: .distantFuture)
     }
 
@@ -23,15 +23,13 @@ public class AsyncContext {
         }
     }
 
-    func resume() {
+    public func resume() {
         semaphore.signal()
     }
 
-/*
     public func sleep(forTimeInterval timeInterval: TimeInterval) {
         Thread.sleep(forTimeInterval: timeInterval)
     }
-*/
 
     @discardableResult
     public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture) throws -> T {
@@ -50,28 +48,28 @@ public class AsyncContext {
     }
 
     @discardableResult
-    public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, throwFirstError: Bool = false) throws -> [Result<Any>] {
+    public func await(tasks: [GenericAsyncTask], timeout: DispatchTime = .distantFuture, muteErrors: Bool = true) throws -> [Result<Any>] {
         var results = Atomic([Result<Any>]())
         var firstError: Error?
         for task in tasks {
-            task.onResult { result in
-                var resume = false
-                results.synchronized { results in
-                    results.append(result)
-                    if results.count == tasks.count {
-                        resume = true
-                    } else if throwFirstError == true, case let Result.error(error) = result {
-                        if firstError == nil {
-                            firstError = error
+            if let task = task as? AsyncResultProvider {
+                task.onResult { result in
+                    var resume = false
+                    results.synchronized { results in
+                        results.append(result)
+                        if results.count == tasks.count {
+                            resume = true
+                        } else if muteErrors == false, case let Result.error(error) = result {
+                            if firstError == nil {
+                                firstError = error
+                            }
+                            resume = true
                         }
-                        resume = true
-                    }
-                    if resume == true {
-                        self.resume()
+                        if resume == true {
+                            self.resume()
+                        }
                     }
                 }
-            }
-            DispatchQueue.global().async {
                 task.run(asyncContext: AsyncContext())
             }
         }
@@ -83,15 +81,17 @@ public class AsyncContext {
     }
 }
 
-public protocol AsyncResultProvider {
+public protocol GenericAsyncTask {
+}
+
+protocol AsyncResultProvider {
     func run(asyncContext: AsyncContext)
     func onResult(_ block: @escaping (Result<Any>) -> Void)
 }
 
-public class AsyncTask<T>: AsyncResultProvider {
+public class AsyncTask<T>: GenericAsyncTask, AsyncResultProvider {
     private var job: ((AsyncContext) throws -> T)
     private var onResultBlocks = [(Result<Any>) -> Void]()
-    fileprivate let dispatchGroup = DispatchGroup()
     public private(set) var result = Atomic<Result<T>?>(nil)
 
     public var resultValue: T? {
@@ -114,30 +114,32 @@ public class AsyncTask<T>: AsyncResultProvider {
         self.job = job
     }
 
-    public func run(asyncContext: AsyncContext) {
-        do {
-            let value = try self.job(AsyncContext())
-            self.result.synchronized { result in
-                if result == nil {
-                    result = .value(value)
-                    for completionBlock in self.onResultBlocks {
-                        completionBlock(.value(value))
+    func run(asyncContext: AsyncContext) {
+        DispatchQueue.global().async {
+            do {
+                let value = try self.job(AsyncContext())
+                self.result.synchronized { result in
+                    if result == nil {
+                        result = .value(value)
+                        for completionBlock in self.onResultBlocks {
+                            completionBlock(.value(value))
+                        }
                     }
                 }
-            }
-        } catch {
-            self.result.synchronized { result in
-                if result == nil {
-                    result = .error(error)
-                    for onResultBlock in self.onResultBlocks {
-                        onResultBlock(.error(error))
+            } catch {
+                self.result.synchronized { result in
+                    if result == nil {
+                        result = .error(error)
+                        for onResultBlock in self.onResultBlocks {
+                            onResultBlock(.error(error))
+                        }
                     }
                 }
             }
         }
     }
 
-    public func onResult(_ block: @escaping (Result<Any>) -> Void) {
+    func onResult(_ block: @escaping (Result<Any>) -> Void) {
         self.result.synchronized { result in
             self.onResultBlocks.append(block)
             if let result = result {
