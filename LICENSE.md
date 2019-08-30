@@ -1,5 +1,3 @@
-##License
-
 The MIT License
 
 Copyright (c) 2018 - 2019 Yuri Drozdovsky ydrozdovsky@gmail.com
