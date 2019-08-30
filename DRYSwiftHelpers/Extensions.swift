@@ -7,7 +7,7 @@ import Foundation
 
 
 extension URLRequest {
-    public func dataTask(asyncContext: AsyncContext, checkStatusCode: Bool = true) -> AsyncTask<Data> {
+    public func dataTask(checkStatusCode: Bool = true) -> AsyncTask<Data> {
         return AsyncTask<Data> { asyncContext in
             var resultData: Data?
             var resultError: Error?

@@ -29,7 +29,7 @@ public struct UnownedBox<A: AnyObject>: Hashable {
     }
 }
 
-public class Atomic<T> {
+public struct Atomic<T> {
     private var _value: T
     private let lock = DispatchSemaphore(value: 1)
     public var value: T {
@@ -53,7 +53,7 @@ public class Atomic<T> {
         _value = value
     }
 
-    public func synchronized<R>(_ job: (inout T) -> R) -> R {
+    public mutating func synchronized<R>(_ job: (inout T) -> R) -> R {
         lock.wait()
         defer {
             lock.signal()
