@@ -9,7 +9,7 @@
 import Foundation
 import DRYSwiftHelpers
 
-async { asyncContext -> String? in
+async { () -> String? in
     print("Hello from background thread")
 
     let urlRequest1 = URLRequest(url: URL(string: "http://worldclockapi.com/api/json/utc/now")!, timeoutInterval: 5.0)
@@ -21,7 +21,7 @@ async { asyncContext -> String? in
     let urlRequest3 = URLRequest(url: URL(string: "http://worldclockapi2.com/api/json/utc/now")!, timeoutInterval: 5.0)
     let dataTask3 = urlRequest3.dataTask()
 
-    try wrapError(asyncContext.await(tasks: [dataTask1, dataTask2, dataTask3], timeout: .now() + 5.0, muteErrors: true))
+    try wrapError(await(tasks: [dataTask1, dataTask2, dataTask3], timeout: .now() + 5.0, muteErrors: true))
     let data = dataTask1.resultValue!
 
     return String(data: data, encoding: .utf8)

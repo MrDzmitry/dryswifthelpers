@@ -10,6 +10,7 @@ public enum Result<T> {
     case error(Error)
 }
 
+/*
 public class AsyncContext {
     private var semaphore = DispatchSemaphore(value: 0)
 
@@ -30,67 +31,19 @@ public class AsyncContext {
     public func sleep(forTimeInterval timeInterval: TimeInterval) {
         Thread.sleep(forTimeInterval: timeInterval)
     }
-
-    @discardableResult
-    public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture) throws -> T {
-        task.onResult { result in
-            self.resume()
-        }
-        task.run(asyncContext: self)
-        try suspend(timeout: timeout)
-
-        switch task.result.value! {
-        case .value(let value):
-            return value
-        case .error(let error):
-            throw error
-        }
-    }
-
-    @discardableResult
-    public func await(tasks: [GenericAsyncTask], timeout: DispatchTime = .distantFuture, muteErrors: Bool = true) throws -> [Result<Any>] {
-        var results = Atomic([Result<Any>]())
-        var firstError: Error?
-        for task in tasks {
-            if let task = task as? AsyncResultProvider {
-                task.onResult { result in
-                    var resume = false
-                    results.synchronized { results in
-                        results.append(result)
-                        if results.count == tasks.count {
-                            resume = true
-                        } else if muteErrors == false, case let Result.error(error) = result {
-                            if firstError == nil {
-                                firstError = error
-                            }
-                            resume = true
-                        }
-                        if resume == true {
-                            self.resume()
-                        }
-                    }
-                }
-                task.run(asyncContext: AsyncContext())
-            }
-        }
-        try suspend(timeout: timeout)
-        if firstError != nil {
-            throw firstError!
-        }
-        return results.value
-    }
 }
+*/
 
 public protocol GenericAsyncTask {
 }
 
 protocol AsyncResultProvider {
-    func run(asyncContext: AsyncContext)
+    func run()
     func onResult(_ block: @escaping (Result<Any>) -> Void)
 }
 
 public class AsyncTask<T>: GenericAsyncTask, AsyncResultProvider {
-    private var job: ((AsyncContext) throws -> T)
+    private var job: (() throws -> T)
     private var onResultBlocks = [(Result<Any>) -> Void]()
     public private(set) var result = Atomic<Result<T>?>(nil)
 
@@ -110,14 +63,14 @@ public class AsyncTask<T>: GenericAsyncTask, AsyncResultProvider {
         }
     }
 
-    public init(_ job: @escaping (AsyncContext) throws -> T) {
+    public init(_ job: @escaping () throws -> T) {
         self.job = job
     }
 
-    func run(asyncContext: AsyncContext) {
+    func run() {
         DispatchQueue.global().async {
             do {
-                let value = try self.job(AsyncContext())
+                let value = try self.job()
                 self.result.synchronized { result in
                     if result == nil {
                         result = .value(value)
@@ -152,17 +105,35 @@ public class AsyncTask<T>: GenericAsyncTask, AsyncResultProvider {
             }
         }
     }
+
+    @discardableResult
+    public func await(timeout: DispatchTime = .distantFuture) throws -> T {
+        assert(Thread.isMainThread == false)
+        let semaphore = Semaphore()
+        self.onResult { result in
+            semaphore.signal()
+        }
+        self.run()
+        try semaphore.wait(timeout: timeout)
+
+        switch self.result.value! {
+        case .value(let value):
+            return value
+        case .error(let error):
+            throw error
+        }
+    }
 }
 
 public class AsyncTaskRunner<T> {
-    private var job: ((AsyncContext) throws -> T)
+    private var job: (() throws -> T)
     fileprivate let dispatchGroup = DispatchGroup()
     private var catchBlocks = [(Error) -> Void]()
     private var successBlocks = [(T) -> Void]()
     private var finallyBlocks = [() -> Void]()
     public private(set) var result = Atomic<Result<T>?>(nil)
 
-    public init(_ job: @escaping (AsyncContext) throws -> T) {
+    public init(_ job: @escaping () throws -> T) {
         self.job = job
     }
 
@@ -202,7 +173,7 @@ public class AsyncTaskRunner<T> {
     func run() {
         DispatchQueue.global().async(group: dispatchGroup) {
             do {
-                let value = try self.job(AsyncContext())
+                let value = try self.job()
                 self.result.value = .value(value)
                 let successBlocks = self.successBlocks
                 let finallyBlocks = self.finallyBlocks
@@ -236,8 +207,48 @@ public class AsyncTaskRunner<T> {
 }
 
 @discardableResult
-public func async<T>(_ job: @escaping (AsyncContext) throws -> T) -> AsyncTaskRunner<T> {
+public func async<T>(_ job: @escaping () throws -> T) -> AsyncTaskRunner<T> {
     let taskRunner = AsyncTaskRunner(job)
     taskRunner.run()
     return taskRunner
+}
+
+@discardableResult
+public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture) throws -> T {
+    return try task.await(timeout: timeout)
+}
+
+@discardableResult
+public func await(tasks: [GenericAsyncTask], timeout: DispatchTime = .distantFuture, muteErrors: Bool = true) throws -> [Result<Any>] {
+    assert(Thread.isMainThread == false)
+    let semaphore = Semaphore()
+    var results = Atomic([Result<Any>]())
+    var firstError: Error?
+    for task in tasks {
+        if let task = task as? AsyncResultProvider {
+            task.onResult { result in
+                var resume = false
+                results.synchronized { results in
+                    results.append(result)
+                    if results.count == tasks.count {
+                        resume = true
+                    } else if muteErrors == false, case let Result.error(error) = result {
+                        if firstError == nil {
+                            firstError = error
+                        }
+                        resume = true
+                    }
+                    if resume == true {
+                        semaphore.signal()
+                    }
+                }
+            }
+            task.run()
+        }
+    }
+    try semaphore.wait(timeout: timeout)
+    if firstError != nil {
+        throw firstError!
+    }
+    return results.value
 }

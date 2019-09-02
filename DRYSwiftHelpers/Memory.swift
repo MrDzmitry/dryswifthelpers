@@ -121,3 +121,25 @@ public class ReadWriteLock {
         return try job()
     }
 }
+
+public class Semaphore {
+    private let semaphore: DispatchSemaphore
+
+    public init() {
+        semaphore = DispatchSemaphore(value: 0)
+    }
+
+    public func wait() {
+        _ = semaphore.wait()
+    }
+
+    public func wait(timeout: DispatchTime) throws {
+        if semaphore.wait(timeout: timeout) == .timedOut {
+            throw DRYSwiftHelpersError.semaphoreTimedOut
+        }
+    }
+
+    public func signal() {
+        _ = semaphore.signal()
+    }
+}

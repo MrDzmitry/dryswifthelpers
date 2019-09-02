@@ -8,12 +8,13 @@ import Foundation
 
 extension URLRequest {
     public func dataTask(checkStatusCode: Bool = true) -> AsyncTask<Data> {
-        return AsyncTask<Data> { asyncContext in
+        return AsyncTask<Data> {
             var resultData: Data?
             var resultError: Error?
+            let semaphore = Semaphore()
             URLSession.shared.dataTask(with: self) { (data: Data?, response: URLResponse?, error: Error?) -> Void in
                 defer {
-                    asyncContext.resume()
+                    semaphore.signal()
                 }
                 if error != nil {
                     resultError = error
@@ -33,7 +34,7 @@ extension URLRequest {
                 }
                 resultData = data
             }.resume()
-            asyncContext.suspend()
+            semaphore.wait()
             if let error = resultError {
                 throw error
             } else {
