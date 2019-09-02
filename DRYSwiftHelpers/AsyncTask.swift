@@ -10,6 +10,11 @@ public enum Result<T> {
     case error(Error)
 }
 
+public enum AsyncTaskThreadMode {
+    case main
+    case sameAsTask
+}
+
 /*
 public class AsyncContext {
     private var semaphore = DispatchSemaphore(value: 0)
@@ -45,6 +50,12 @@ protocol AsyncResultProvider {
 public class AsyncTask<T>: GenericAsyncTask, AsyncResultProvider {
     private var job: (() throws -> T)
     private var onResultBlocks = [(Result<Any>) -> Void]()
+/*
+    fileprivate let dispatchGroup = DispatchGroup()
+    private var catchBlocks = [(AsyncTaskThreadMode, (Error) -> Void)]()
+    private var successBlocks = [(AsyncTaskThreadMode, (T) -> Void)]()
+    private var finallyBlocks = [(AsyncTaskThreadMode, () -> Void)]()
+*/
     public private(set) var result = Atomic<Result<T>?>(nil)
 
     public var resultValue: T? {
@@ -219,7 +230,7 @@ public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture)
 }
 
 @discardableResult
-public func await(tasks: [GenericAsyncTask], timeout: DispatchTime = .distantFuture, muteErrors: Bool = true) throws -> [Result<Any>] {
+public func await(tasks: [GenericAsyncTask], timeout: DispatchTime = .distantFuture, muteErrors: Bool = false) throws -> [Result<Any>] {
     assert(Thread.isMainThread == false)
     let semaphore = Semaphore()
     var results = Atomic([Result<Any>]())
