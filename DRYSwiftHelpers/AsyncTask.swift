@@ -39,16 +39,14 @@ public class AsyncContext {
 }
 */
 
-public protocol GenericAsyncTask {
-}
-
-protocol AsyncResultProvider {
+public protocol AsyncResultProvider {
     func run()
     func onResult(_ block: @escaping (Result<Any>) -> Void)
 }
 
-public class AsyncTask<T>: GenericAsyncTask, AsyncResultProvider {
+public class AsyncTask<T>: AsyncResultProvider {
     private var job: (() throws -> T)
+    private var didRun = Atomic<Bool>(false)
     private var onResultBlocks = [(Result<Any>) -> Void]()
 /*
     fileprivate let dispatchGroup = DispatchGroup()
@@ -78,7 +76,10 @@ public class AsyncTask<T>: GenericAsyncTask, AsyncResultProvider {
         self.job = job
     }
 
-    func run() {
+    public func run() {
+        if didRun.compareAndSet(true) == false {
+            return
+        }
         DispatchQueue.global().async {
             do {
                 let value = try self.job()
@@ -103,7 +104,7 @@ public class AsyncTask<T>: GenericAsyncTask, AsyncResultProvider {
         }
     }
 
-    func onResult(_ block: @escaping (Result<Any>) -> Void) {
+    public func onResult(_ block: @escaping (Result<Any>) -> Void) {
         self.result.synchronized { result in
             self.onResultBlocks.append(block)
             if let result = result {
@@ -230,32 +231,33 @@ public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture)
 }
 
 @discardableResult
-public func await(tasks: [GenericAsyncTask], timeout: DispatchTime = .distantFuture, muteErrors: Bool = false) throws -> [Result<Any>] {
+public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, muteErrors: Bool = false) throws -> [Result<Any>?] {
     assert(Thread.isMainThread == false)
     let semaphore = Semaphore()
-    var results = Atomic([Result<Any>]())
+    var results = Atomic(Array<Result<Any>?>(repeating: nil, count: tasks.count))
     var firstError: Error?
-    for task in tasks {
-        if let task = task as? AsyncResultProvider {
-            task.onResult { result in
-                var resume = false
-                results.synchronized { results in
-                    results.append(result)
-                    if results.count == tasks.count {
-                        resume = true
-                    } else if muteErrors == false, case let Result.error(error) = result {
-                        if firstError == nil {
-                            firstError = error
-                        }
-                        resume = true
+    var resultsCount = 0
+    for i in 0..<tasks.count {
+        let task = tasks[i]
+        task.onResult { result in
+            var resume = false
+            results.synchronized { results in
+                results[i] = result
+                resultsCount += 1
+                if resultsCount == results.count {
+                    resume = true
+                } else if muteErrors == false, case let Result.error(error) = result {
+                    if firstError == nil {
+                        firstError = error
                     }
-                    if resume == true {
-                        semaphore.signal()
-                    }
+                    resume = true
+                }
+                if resume == true {
+                    semaphore.signal()
                 }
             }
-            task.run()
         }
+        task.run()
     }
     try semaphore.wait(timeout: timeout)
     if firstError != nil {

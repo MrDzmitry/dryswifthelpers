@@ -31,19 +31,19 @@ public struct UnownedBox<A: AnyObject>: Hashable {
 
 public struct Atomic<T> {
     private var _value: T
-    private let lock = DispatchSemaphore(value: 1)
+    private let lock = Lock()
     public var value: T {
         get {
-            lock.wait()
+            lock.lock()
             defer {
-                lock.signal()
+                lock.unlock()
             }
             return _value
         }
         set {
-            lock.wait()
+            lock.lock()
             defer {
-                lock.signal()
+                lock.unlock()
             }
             _value = newValue
         }
@@ -54,11 +54,26 @@ public struct Atomic<T> {
     }
 
     public mutating func synchronized<R>(_ job: (inout T) -> R) -> R {
-        lock.wait()
+        lock.lock()
         defer {
-            lock.signal()
+            lock.unlock()
         }
         return job(&_value)
+    }
+}
+
+extension Atomic where T: Equatable {
+    public mutating func compareAndSet(_ newValue: T) -> Bool {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+        if _value != newValue {
+            _value = newValue
+            return true
+        } else {
+            return false
+        }
     }
 }
 
