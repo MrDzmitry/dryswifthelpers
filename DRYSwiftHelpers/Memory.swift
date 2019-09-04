@@ -29,54 +29,6 @@ public struct UnownedBox<A: AnyObject>: Hashable {
     }
 }
 
-public struct Atomic<T> {
-    private var _value: T
-    private let lock = Lock()
-    public var value: T {
-        get {
-            lock.lock()
-            defer {
-                lock.unlock()
-            }
-            return _value
-        }
-        set {
-            lock.lock()
-            defer {
-                lock.unlock()
-            }
-            _value = newValue
-        }
-    }
-
-    public init(_ value: T) {
-        _value = value
-    }
-
-    public mutating func synchronized<R>(_ job: (inout T) -> R) -> R {
-        lock.lock()
-        defer {
-            lock.unlock()
-        }
-        return job(&_value)
-    }
-}
-
-extension Atomic where T: Equatable {
-    public mutating func compareAndSet(_ newValue: T) -> Bool {
-        lock.lock()
-        defer {
-            lock.unlock()
-        }
-        if _value != newValue {
-            _value = newValue
-            return true
-        } else {
-            return false
-        }
-    }
-}
-
 public class Lock {
     private var mutex = pthread_mutex_t()
 
@@ -156,5 +108,89 @@ public class Semaphore {
 
     public func signal() {
         _ = semaphore.signal()
+    }
+}
+
+public struct Atomic<T> {
+    private var _value: T
+    private let lock = ReadWriteLock()
+
+    public init(_ value: T) {
+        _value = value
+    }
+
+    public func getValue() -> T {
+        return lock.withReadLock {
+            return _value
+        }
+    }
+
+    public mutating func setValue(_ newValue: T) {
+        lock.withWriteLock {
+            _value = newValue
+        }
+    }
+
+    public func withReadLock<R>(_ job: (T) -> R) -> R {
+        return lock.withReadLock {
+            job(_value)
+        }
+    }
+
+    public mutating func withWriteLock<R>(_ job: (inout T) -> R) -> R {
+        return lock.withWriteLock {
+            job(&_value)
+        }
+    }
+}
+
+extension Atomic where T: Equatable {
+    public mutating func compareAndSet(_ newValue: T) -> Bool {
+        let didSet = lock.withWriteLock { () -> Bool in
+            if _value != newValue {
+                _value = newValue
+                return true
+            } else {
+                return false
+            }
+        }
+        return didSet
+    }
+}
+
+public class Condition<T: Equatable> {
+    private var value: Atomic<T>
+    private let valueChangedEvent = Event<T>()
+
+    public init(_ value: T) {
+        self.value = Atomic(value)
+    }
+
+    public func waitForValue(_ expectedValue: T) {
+        let semaphore = Semaphore()
+        var eventHandler: EventHandler?
+
+        let shouldWait = value.withReadLock { (currentValue) -> Bool in
+            if currentValue == expectedValue {
+                return false
+            } else {
+                eventHandler = valueChangedEvent.addHandler { newValue in
+                    if newValue == expectedValue {
+                        semaphore.signal()
+                    }
+                }
+                return true
+            }
+        }
+
+        if shouldWait {
+            semaphore.wait()
+            eventHandler?.dispose()
+        }
+    }
+
+    public func setValue(_ newValue: T) {
+        value.setValue(newValue)
+        valueChangedEvent.raise(newValue)
     }
 }

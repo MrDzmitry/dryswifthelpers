@@ -37,9 +37,11 @@ public class Event<T> {
         return wrapper
     }
 
-    func removeHandler(_ handler: HashableClass) {
-        lock.synchronized {
-            eventHandlers.remove(handler)
+    func removeHandler(_ handler: EventHandler) {
+        if let handler = handler as? HashableClass {
+            lock.synchronized {
+                eventHandlers.remove(handler)
+            }
         }
     }
 }
