@@ -9,32 +9,25 @@
 import Foundation
 import DRYSwiftHelpers
 
-async { asyncContext -> String? in
+async { () -> String? in
     print("Hello from background thread")
 
-    let dataTask1 = async { innerAsyncContext -> Data in
-        let urlRequest = URLRequest(url: URL(string: "http://worldclockapi.com/api/json/utc/now")!, timeoutInterval: 5.0)
-        let data = try wrapError(urlRequest.getData(asyncContext: innerAsyncContext))
-        return data
-    }
-    let dataTask2 = async { innerAsyncContext -> Data in
-        let urlRequest = URLRequest(url: URL(string: "http://worldclockapi.com/api/json/utc/now")!, timeoutInterval: 5.0)
-        let data = try wrapError(urlRequest.getData(asyncContext: innerAsyncContext))
-        return data
-    }
-    let dataTask3 = async { innerAsyncContext -> Data in
-        let urlRequest = URLRequest(url: URL(string: "http://worldclockapi2.com/api/json/utc/now")!, timeoutInterval: 5.0)
-        let data = try wrapError(urlRequest.getData(asyncContext: innerAsyncContext))
-        return data
-    }
+    let urlRequest1 = URLRequest(url: URL(string: "http://worldclockapi.com/api/json/utc/now")!, timeoutInterval: 5.0)
+    let dataTask1 = urlRequest1.dataTask()
 
-    try wrapError(asyncContext.wait(tasks: [dataTask1, dataTask2, dataTask3], timeout: .now() + 1.0, throwFirstError: false))
+    let urlRequest2 = URLRequest(url: URL(string: "http://worldclockapi.com/api/json/utc/now")!, timeoutInterval: 5.0)
+    let dataTask2 = urlRequest2.dataTask()
+
+    let urlRequest3 = URLRequest(url: URL(string: "http://worldclockapi2.com/api/json/utc/now")!, timeoutInterval: 5.0)
+    let dataTask3 = urlRequest3.dataTask()
+
+    try wrapError(await(tasks: [dataTask1, dataTask2, dataTask3], timeout: .now() + 5.0, muteErrors: true))
     let data = dataTask1.resultValue!
 
     return String(data: data, encoding: .utf8)
 }.onSuccess { string in
     print("response: \(string ?? "nil")")
-}.catch { error in
+}.onError { error in
     print("Caught error:\n\(error)")
 }.finally {
     print("Finally back to main thread")
