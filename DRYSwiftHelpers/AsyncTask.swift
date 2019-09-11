@@ -57,7 +57,7 @@ public protocol AsyncResultProvider {
 }
 
 public class AsyncTask<T>: AsyncResultProvider {
-    private var job: (() throws -> T)
+    private var job: (() throws -> T)?
     private var didRun = Atomic<Bool>(false)
     private var onResultBlocks = [(Result<Any>) -> Void]()
     //fileprivate let dispatchGroup = DispatchGroup()
@@ -95,7 +95,7 @@ public class AsyncTask<T>: AsyncResultProvider {
         }
         DispatchQueue.global().async {
             do {
-                let value = try self.job()
+                let value = try self.job!()
                 self.result.withWriteLock { result in
                     if result == nil {
                         result = .value(value)
@@ -138,6 +138,7 @@ public class AsyncTask<T>: AsyncResultProvider {
                     }
                 }
             }
+            self.job = nil
         }
     }
 
