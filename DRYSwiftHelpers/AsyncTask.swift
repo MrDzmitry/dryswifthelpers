@@ -316,12 +316,13 @@ public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distant
             results.withWriteLock { results in
                 results[i] = result
                 resultsCount += 1
-                if resultsCount == results.count {
-                    resume = true
-                } else if muteErrors == false, case let Result.error(error) = result {
+                if muteErrors == false, case let Result.error(error) = result {
                     if firstError == nil {
                         firstError = error
                     }
+                    resume = true
+                }
+                if resultsCount == results.count {
                     resume = true
                 }
                 if resume == true {

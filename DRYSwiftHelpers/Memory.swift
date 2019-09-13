@@ -5,10 +5,20 @@
 
 import Foundation
 
-public struct WeakBox<A: AnyObject> {
-    public weak var value: A?
+public struct WeakBox<A: AnyObject>: Hashable {
+    public private(set) weak var value: A?
+    private let pointer: UnsafeMutableRawPointer
     public init(_ value: A) {
         self.value = value
+        pointer = Unmanaged.passUnretained(value).toOpaque()
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(pointer)
+    }
+
+    public static func ==(lhs: WeakBox<A>, rhs: WeakBox<A>) -> Bool {
+        return lhs.hashValue == rhs.hashValue
     }
 }
 
@@ -33,7 +43,13 @@ public class Lock {
     private var mutex = pthread_mutex_t()
 
     public init() {
-        pthread_mutex_init(&mutex, nil)
+        let status = pthread_mutex_init(&mutex, nil)
+        assert(status == 0)
+    }
+
+    deinit {
+        let status = pthread_mutex_destroy(&mutex)
+        assert(status == 0)
     }
 
     public func tryLock() -> Bool {
@@ -41,19 +57,22 @@ public class Lock {
     }
 
     public func lock() {
-        pthread_mutex_lock(&mutex)
+        let status = pthread_mutex_lock(&mutex)
+        assert(status == 0)
     }
 
     public func unlock() {
-        pthread_mutex_unlock(&mutex)
+        let status = pthread_mutex_unlock(&mutex)
+        assert(status == 0)
     }
 
-    public func synchronized(_ job: () throws -> Void) rethrows {
+    @discardableResult
+    public func synchronized<T>(_ job: () throws -> T) rethrows -> T {
         lock()
         defer {
             unlock()
         }
-        try job()
+        return try job()
     }
 }
 
