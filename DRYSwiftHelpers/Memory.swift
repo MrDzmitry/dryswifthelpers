@@ -111,8 +111,8 @@ public class ReadWriteLock {
 public class Semaphore {
     private let semaphore: DispatchSemaphore
 
-    public init() {
-        semaphore = DispatchSemaphore(value: 0)
+    public init(value: Int = 0) {
+        semaphore = DispatchSemaphore(value: value)
     }
 
     public func wait() {

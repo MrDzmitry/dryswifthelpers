@@ -38,16 +38,20 @@ public func wrapError<T>(_ routine: @autoclosure () throws -> T, file: String = 
     do {
         return try routine()
     } catch {
-        if let wrappedError = error as? ErrorWrapper {
-            let fileName = URL(fileURLWithPath: file, isDirectory: false).lastPathComponent
-            wrappedError.log.insert("\(fileName):\(line):\(column)", at: 0)
-            throw wrappedError
-        } else {
-            let wrappedError = ErrorWrapper(innerError: error)
-            let fileName = URL(fileURLWithPath: file, isDirectory: false).lastPathComponent
-            wrappedError.log.append("\(fileName):\(line):\(column) \(String(describing: error)))")
-            throw wrappedError
-        }
+        throw wrapError(error, file: file, line: line, column: column)
+    }
+}
+
+public func wrapError(_ error: Error, file: String = #file, line: UInt = #line, column: UInt = #column) -> ErrorWrapper {
+    if let wrappedError = error as? ErrorWrapper {
+        let fileName = URL(fileURLWithPath: file, isDirectory: false).lastPathComponent
+        wrappedError.log.insert("\(fileName):\(line):\(column)", at: 0)
+        return wrappedError
+    } else {
+        let wrappedError = ErrorWrapper(innerError: error)
+        let fileName = URL(fileURLWithPath: file, isDirectory: false).lastPathComponent
+        wrappedError.log.append("\(fileName):\(line):\(column) \(String(describing: error))")
+        return wrappedError
     }
 }
 

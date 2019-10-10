@@ -68,9 +68,10 @@ public class AsyncTask<T>: AsyncResultProvider {
                 self.result.withWriteLock { result in
                     if result == nil {
                         result = .value(value)
-                        for inResultBlock in self.onResultBlocks {
-                            inResultBlock(.value(value))
+                        for onResultBlock in self.onResultBlocks {
+                            onResultBlock(.value(value))
                         }
+                        self.onResultBlocks.removeAll()
 
                         for block in self.successBlocks {
                             DispatchQueue.main.async {
@@ -78,6 +79,7 @@ public class AsyncTask<T>: AsyncResultProvider {
                             }
                         }
                         self.successBlocks.removeAll()
+                        self.catchBlocks.removeAll()
 
                         for block in self.finallyBlocks {
                             DispatchQueue.main.async {
@@ -102,6 +104,7 @@ public class AsyncTask<T>: AsyncResultProvider {
                             }
                         }
                         self.catchBlocks.removeAll()
+                        self.successBlocks.removeAll()
 
                         for block in self.finallyBlocks {
                             DispatchQueue.main.async {
@@ -118,7 +121,6 @@ public class AsyncTask<T>: AsyncResultProvider {
 
     public func onResult(_ block: @escaping (Result<Any>) -> Void) {
         self.result.withReadLock { result in
-            self.onResultBlocks.append(block)
             if let result = result {
                 switch result {
                 case .value(let value):
@@ -126,6 +128,8 @@ public class AsyncTask<T>: AsyncResultProvider {
                 case .error(let error):
                     block(Result.error(error))
                 }
+            } else {
+                self.onResultBlocks.append(block)
             }
         }
     }
@@ -134,7 +138,9 @@ public class AsyncTask<T>: AsyncResultProvider {
     public func onSuccess(_ block: @escaping (T) -> Void) -> AsyncTask<T> {
         self.result.withReadLock { result in
             if case let Result.value(value)? = result {
-                block(value)
+                DispatchQueue.main.async {
+                    block(value)
+                }
             } else {
                 self.successBlocks.append(block)
             }
@@ -146,7 +152,9 @@ public class AsyncTask<T>: AsyncResultProvider {
     public func onError(_ block: @escaping (Error) -> Void) -> AsyncTask<T> {
         self.result.withReadLock { result in
             if case let Result.error(error)? = result {
-                block(error)
+                DispatchQueue.main.async {
+                    block(error)
+                }
             } else {
                 self.catchBlocks.append(block)
             }
@@ -158,7 +166,9 @@ public class AsyncTask<T>: AsyncResultProvider {
     public func finally(_ block: @escaping () -> Void) -> AsyncTask<T> {
         self.result.withReadLock { result in
             if result != nil {
-                block()
+                DispatchQueue.main.async {
+                    block()
+                }
             } else {
                 self.finallyBlocks.append(block)
             }
