@@ -177,7 +177,7 @@ extension Atomic where T: Equatable {
     }
 }
 
-public class Condition<T: Equatable> {
+public class Condition<T> {
     private var value: Atomic<T>
     private let valueChangedEvent = Event<T>()
 
@@ -185,7 +185,40 @@ public class Condition<T: Equatable> {
         self.value = Atomic(value)
     }
 
-    public func waitForValue(_ expectedValue: T) {
+    public func setValue(_ newValue: T) {
+        value.setValue(newValue)
+        valueChangedEvent.raise(newValue)
+    }
+
+    public func getValue() -> T {
+        return value.getValue()
+    }
+
+    public func observeValue(_ checker: @escaping (T, inout Bool) -> Void) {
+        let semaphore = Semaphore()
+        var stop = false
+        var eventHandler: EventHandler?
+
+        value.withReadLock { value in
+            checker(value, &stop)
+            if !stop {
+                eventHandler = valueChangedEvent.addHandler { newValue in
+                    checker(newValue, &stop)
+                    if stop {
+                        semaphore.signal()
+                    }
+                }
+            }
+        }
+        if eventHandler != nil {
+            semaphore.wait()
+            eventHandler!.dispose()
+        }
+    }
+}
+
+extension Condition where T: Equatable {
+    public func waitForValue(_ expectedValue: T, timeout: DispatchTime = .distantFuture) throws {
         let semaphore = Semaphore()
         var eventHandler: EventHandler?
 
@@ -195,6 +228,7 @@ public class Condition<T: Equatable> {
             } else {
                 eventHandler = valueChangedEvent.addHandler { newValue in
                     if newValue == expectedValue {
+                        eventHandler!.dispose()
                         semaphore.signal()
                     }
                 }
@@ -203,13 +237,7 @@ public class Condition<T: Equatable> {
         }
 
         if shouldWait {
-            semaphore.wait()
-            eventHandler?.dispose()
+            try semaphore.wait(timeout: timeout)
         }
-    }
-
-    public func setValue(_ newValue: T) {
-        value.setValue(newValue)
-        valueChangedEvent.raise(newValue)
     }
 }
