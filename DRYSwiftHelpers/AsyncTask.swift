@@ -18,10 +18,19 @@ public enum Result<T> {
             }
         }
     }
+
+    func asResultAny() -> Result<Any> {
+        switch self {
+        case .value(let value):
+            return Result<Any>.value(value)
+        case .error(let error):
+            return Result<Any>.error(error)
+        }
+    }
 }
 
 public protocol AsyncResultProvider {
-    func run()
+    //func run()
     func onResult(_ block: @escaping (Result<Any>) -> Void)
 }
 
@@ -236,11 +245,71 @@ public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distant
                 }
             }
         }
-        task.run()
+        //task.run()
     }
     try semaphore.wait(timeout: timeout)
     if firstError != nil {
         throw firstError!
     }
     return results.getValue()
+}
+
+public class ExternalAsyncTask<T>: AsyncResultProvider {
+    private var result = Atomic<Result<T>?>(nil)
+    private var onResultBlocks = [(Result<Any>) -> Void]()
+
+    public init() {}
+
+    public func onResult(_ block: @escaping (Result<Any>) -> Void) {
+        self.result.withReadLock { result in
+            if let result = result {
+                switch result {
+                case .value(let value):
+                    block(Result.value(value))
+                case .error(let error):
+                    block(Result.error(error))
+                }
+            } else {
+                self.onResultBlocks.append(block)
+            }
+        }
+    }
+
+    public func setResult(_ newValue: Result<T>?) {
+        result.withWriteLock { result in
+            result = newValue
+            if let resultAny = result?.asResultAny() {
+                for onResultBlock in self.onResultBlocks {
+                    onResultBlock(resultAny)
+                }
+                self.onResultBlocks.removeAll()
+            }
+        }
+    }
+
+    public func getResult() -> Result<T>? {
+        return result.getValue()
+    }
+
+    @discardableResult
+    public func await(timeout: DispatchTime = .distantFuture) throws -> T {
+        assert(Thread.isMainThread == false)
+        let semaphore = Semaphore()
+        var resultValue: T?
+        var resultError: Error?
+        self.onResult { result in
+            switch result {
+            case .value(let value):
+                resultValue = (value as! T)
+            case .error(let error):
+                resultError = error
+            }
+            semaphore.signal()
+        }
+        try semaphore.wait(timeout: timeout)
+        if let error = resultError {
+            throw error
+        }
+        return resultValue!
+    }
 }
