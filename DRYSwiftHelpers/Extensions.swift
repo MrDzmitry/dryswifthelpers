@@ -7,9 +7,9 @@ import Foundation
 
 
 extension URLRequest {
-    public func dataTask(checkStatusCode: Bool = true) -> AsyncTask<Data> {
-        return AsyncTask<Data> {
-            var resultData: Data?
+    public func createAsyncTask(checkStatusCode: Bool = true) -> AsyncTask<(data: Data, httpResponse: HTTPURLResponse)> {
+        return AsyncTask<(data: Data, httpResponse: HTTPURLResponse)> {
+            var result: (Data, HTTPURLResponse)?
             var resultError: Error?
             let semaphore = Semaphore()
             URLSession.shared.dataTask(with: self) { (data: Data?, response: URLResponse?, error: Error?) -> Void in
@@ -32,13 +32,13 @@ extension URLRequest {
                     resultError = DRYSwiftHelpersError.httpInvalidResponse
                     return
                 }
-                resultData = data
+                result = (data, response)
             }.resume()
             semaphore.wait()
             if let error = resultError {
                 throw error
             } else {
-                return resultData!
+                return result!
             }
         }
     }
