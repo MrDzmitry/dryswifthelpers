@@ -9,6 +9,7 @@ public enum DRYSwiftHelpersError: Error {
     case semaphoreTimedOut
     case httpInvalidResponse
     case httpBadStatusCode(statusCode: Int, data: Data?)
+    case operationCancelled
 
     public var description: String {
         switch self {

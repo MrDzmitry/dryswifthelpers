@@ -9,13 +9,19 @@ public enum Result<T> {
     case value(T)
     case error(Error)
 
-    public var isError: Bool {
-        get {
-            if case Result<T>.error = self {
-                return true
-            } else {
-                return false
-            }
+    public func getValue() -> T? {
+        if case .value(let result) = self {
+            return result
+        } else {
+            return nil
+        }
+    }
+
+    public func getError() -> Error? {
+        if case .error(let result) = self {
+            return result
+        } else {
+            return nil
         }
     }
 
@@ -307,8 +313,8 @@ public class ExternalAsyncTask<T>: AsyncResultProvider {
             semaphore.signal()
         }
         try semaphore.wait(timeout: timeout)
-        if let error = resultError {
-            throw error
+        if resultError != nil {
+            throw resultError!
         }
         return resultValue!
     }
