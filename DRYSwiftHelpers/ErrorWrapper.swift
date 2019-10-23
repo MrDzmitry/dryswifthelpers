@@ -5,23 +5,17 @@
 
 import Foundation
 
-public class ErrorWrapper: Error, CustomStringConvertible, LocalizedError {
+public struct ErrorWrapper: Error, CustomStringConvertible, LocalizedError {
     fileprivate(set) var log = [String]()
     var innerError: Error
 
-    public init(innerError: Error) {
+    init(innerError: Error) {
         self.innerError = innerError
     }
 
     public var description: String {
         get {
-            var result = ""
-            for s in log {
-                result.append(s)
-                if result.last != "\n" {
-                    result.append("\n")
-                }
-            }
+            let result = log.reversed().joined(separator: " -> ")
             return result
         }
     }
@@ -43,12 +37,12 @@ public func wrapError<T>(_ routine: @autoclosure () throws -> T, file: String = 
 }
 
 public func wrapError(_ error: Error, file: String = #file, line: UInt = #line, column: UInt = #column) -> ErrorWrapper {
-    if let wrappedError = error as? ErrorWrapper {
+    if var wrappedError = error as? ErrorWrapper {
         let fileName = URL(fileURLWithPath: file, isDirectory: false).lastPathComponent
-        wrappedError.log.insert("\(fileName):\(line):\(column)", at: 0)
+        wrappedError.log.append("\(fileName):\(line):\(column)")
         return wrappedError
     } else {
-        let wrappedError = ErrorWrapper(innerError: error)
+        var wrappedError = ErrorWrapper(innerError: error)
         let fileName = URL(fileURLWithPath: file, isDirectory: false).lastPathComponent
         wrappedError.log.append("\(fileName):\(line):\(column) \(String(describing: error))")
         return wrappedError

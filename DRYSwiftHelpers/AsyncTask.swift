@@ -43,26 +43,31 @@ public protocol AsyncResultProvider {
 public class AsyncTask<T>: AsyncResultProvider {
     private var job: (() throws -> T)?
     private var didRun = Atomic<Bool>(false)
+    private let lock = Lock()
     private var onResultBlocks = [(Result<Any>) -> Void]()
     //fileprivate let dispatchGroup = DispatchGroup()
     private var catchBlocks = [(Error) -> Void]()
     private var successBlocks = [(T) -> Void]()
     private var finallyBlocks = [() -> Void]()
-    public private(set) var result = Atomic<Result<T>?>(nil)
+    private var result: Result<T>?
 
     public var resultValue: T? {
-        if let result = self.result.getValue(), case Result<T>.value(let value) = result {
-            return value
-        } else {
-            return nil
+        return lock.synchronized {
+            if case Result<T>.value(let value)? = result {
+                return value
+            } else {
+                return nil
+            }
         }
     }
 
     public var resultError: Error? {
-        if let result = self.result.getValue(), case Result<T>.error(let error) = result {
-            return error
-        } else {
-            return nil
+        return lock.synchronized {
+            if case Result<T>.error(let error)? = result {
+                return error
+            } else {
+                return nil
+            }
         }
     }
 
@@ -80,9 +85,9 @@ public class AsyncTask<T>: AsyncResultProvider {
         DispatchQueue.global().async {
             do {
                 let value = try self.job!()
-                self.result.withWriteLock { result in
-                    if result == nil {
-                        result = .value(value)
+                self.lock.synchronized {
+                    if self.result == nil {
+                        self.result = .value(value)
                         for onResultBlock in self.onResultBlocks {
                             onResultBlock(.value(value))
                         }
@@ -105,9 +110,9 @@ public class AsyncTask<T>: AsyncResultProvider {
                     }
                 }
             } catch {
-                self.result.withWriteLock { result in
-                    if result == nil {
-                        result = .error(error)
+                self.lock.synchronized {
+                    if self.result == nil {
+                        self.result = .error(error)
                         for onResultBlock in self.onResultBlocks {
                             onResultBlock(.error(error))
                         }
@@ -135,8 +140,8 @@ public class AsyncTask<T>: AsyncResultProvider {
     }
 
     public func onResult(_ block: @escaping (Result<Any>) -> Void) {
-        self.result.withReadLock { result in
-            if let result = result {
+        self.lock.synchronized {
+            if let result = self.result {
                 switch result {
                 case .value(let value):
                     block(Result.value(value))
@@ -151,8 +156,8 @@ public class AsyncTask<T>: AsyncResultProvider {
 
     @discardableResult
     public func onSuccess(_ block: @escaping (T) -> Void) -> AsyncTask<T> {
-        self.result.withReadLock { result in
-            if case let Result.value(value)? = result {
+        self.lock.synchronized {
+            if case let Result.value(value)? = self.result {
                 DispatchQueue.main.async {
                     block(value)
                 }
@@ -165,8 +170,8 @@ public class AsyncTask<T>: AsyncResultProvider {
 
     @discardableResult
     public func onError(_ block: @escaping (Error) -> Void) -> AsyncTask<T> {
-        self.result.withReadLock { result in
-            if case let Result.error(error)? = result {
+        self.lock.synchronized {
+            if case let Result.error(error)? = self.result {
                 DispatchQueue.main.async {
                     block(error)
                 }
@@ -179,8 +184,8 @@ public class AsyncTask<T>: AsyncResultProvider {
 
     @discardableResult
     public func finally(_ block: @escaping () -> Void) -> AsyncTask<T> {
-        self.result.withReadLock { result in
-            if result != nil {
+        self.lock.synchronized {
+            if self.result != nil {
                 DispatchQueue.main.async {
                     block()
                 }
@@ -261,14 +266,15 @@ public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distant
 }
 
 public class ExternalAsyncTask<T>: AsyncResultProvider {
-    private var result = Atomic<Result<T>?>(nil)
+    private var result: Result<T>?
+    private var lock = Lock()
     private var onResultBlocks = [(Result<Any>) -> Void]()
 
     public init() {}
 
     public func onResult(_ block: @escaping (Result<Any>) -> Void) {
-        self.result.withReadLock { result in
-            if let result = result {
+        self.lock.synchronized {
+            if let result = self.result {
                 switch result {
                 case .value(let value):
                     block(Result.value(value))
@@ -282,8 +288,8 @@ public class ExternalAsyncTask<T>: AsyncResultProvider {
     }
 
     public func setResult(_ newValue: Result<T>?) {
-        result.withWriteLock { result in
-            result = newValue
+        self.lock.synchronized {
+            self.result = newValue
             if let resultAny = result?.asResultAny() {
                 for onResultBlock in self.onResultBlocks {
                     onResultBlock(resultAny)
@@ -294,7 +300,9 @@ public class ExternalAsyncTask<T>: AsyncResultProvider {
     }
 
     public func getResult() -> Result<T>? {
-        return result.getValue()
+        return self.lock.synchronized {
+            return result
+        }
     }
 
     @discardableResult
