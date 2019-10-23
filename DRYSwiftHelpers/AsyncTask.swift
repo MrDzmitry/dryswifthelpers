@@ -9,18 +9,6 @@ public enum Result<T> {
     case value(T)
     case error(Error)
 
-/*
-    public var isError: Bool {
-        get {
-            if case Result<T>.error = self {
-                return true
-            } else {
-                return false
-            }
-        }
-    }
-*/
-
     public func getValue() -> T? {
         if case .value(let result) = self {
             return result
@@ -204,14 +192,14 @@ public class AsyncTask<T>: AsyncResultProvider {
     }
 
     @discardableResult
-    public func await(timeout: DispatchTime = .distantFuture, file: String = #file, line: UInt = #line, column: UInt = #column) throws -> T {
+    public func await(timeout: DispatchTime = .distantFuture) throws -> T {
         assert(Thread.isMainThread == false)
         let semaphore = Semaphore()
         self.onResult { result in
             semaphore.signal()
         }
         self.run()
-        try wrapError(semaphore.wait(timeout: timeout), file: file, line: line, column: column)
+        try semaphore.wait(timeout: timeout)
 
         switch self.result.getValue()! {
         case .value(let value):
@@ -236,7 +224,7 @@ public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture)
 */
 
 @discardableResult
-public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, muteErrors: Bool = false, file: String = #file, line: UInt = #line, column: UInt = #column) throws -> [Result<Any>?] {
+public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, muteErrors: Bool = false) throws -> [Result<Any>?] {
     assert(Thread.isMainThread == false)
     let semaphore = Semaphore()
     var results = Atomic(Array<Result<Any>?>(repeating: nil, count: tasks.count))
@@ -265,9 +253,9 @@ public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distant
         }
         //task.run()
     }
-    try wrapError(semaphore.wait(timeout: timeout), file: file, line: line, column: column)
+    try semaphore.wait(timeout: timeout)
     if firstError != nil {
-        throw wrapError(firstError!, file: file, line: line, column: column)
+        throw firstError!
     }
     return results.getValue()
 }
@@ -310,7 +298,7 @@ public class ExternalAsyncTask<T>: AsyncResultProvider {
     }
 
     @discardableResult
-    public func await(timeout: DispatchTime = .distantFuture, file: String = #file, line: UInt = #line, column: UInt = #column) throws -> T {
+    public func await(timeout: DispatchTime = .distantFuture) throws -> T {
         assert(Thread.isMainThread == false)
         let semaphore = Semaphore()
         var resultValue: T?
@@ -324,9 +312,9 @@ public class ExternalAsyncTask<T>: AsyncResultProvider {
             }
             semaphore.signal()
         }
-        try wrapError(semaphore.wait(timeout: timeout))
+        try semaphore.wait(timeout: timeout)
         if resultError != nil {
-            throw wrapError(resultError!, file: file, line: line, column: column)
+            throw resultError!
         }
         return resultValue!
     }
