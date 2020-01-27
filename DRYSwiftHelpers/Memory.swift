@@ -130,7 +130,7 @@ public class Semaphore {
     }
 }
 
-public struct Atomic<T> {
+public class Atomic<T> {
     private var _value: T
     private let lock = ReadWriteLock()
 
@@ -144,27 +144,27 @@ public struct Atomic<T> {
         }
     }
 
-    public mutating func setValue(_ newValue: T) {
+    public func setValue(_ newValue: T) {
         lock.withWriteLock {
             _value = newValue
         }
     }
 
-    public func withReadLock<R>(_ job: (T) -> R) -> R {
-        return lock.withReadLock {
-            job(_value)
+    public func withReadLock<R>(_ job: (T) throws -> R) rethrows -> R {
+        return try lock.withReadLock {
+            try job(_value)
         }
     }
 
-    public mutating func withWriteLock<R>(_ job: (inout T) -> R) -> R {
-        return lock.withWriteLock {
-            job(&_value)
+    public func withWriteLock<R>(_ job: (inout T) throws -> R) rethrows -> R {
+        return try lock.withWriteLock {
+            try job(&_value)
         }
     }
 }
 
 extension Atomic where T: Equatable {
-    public mutating func compareAndSet(_ newValue: T) -> Bool {
+    public func compareAndSet(_ newValue: T) -> Bool {
         let didSet = lock.withWriteLock { () -> Bool in
             if _value != newValue {
                 _value = newValue
