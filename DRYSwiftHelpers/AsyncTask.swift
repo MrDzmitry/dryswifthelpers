@@ -37,7 +37,7 @@ public enum Result<T> {
 
 public protocol AsyncResultProvider {
     //func run()
-    func onResult(_ block: @escaping (Result<Any>) -> Void)
+    func addResultHandler(_ block: @escaping (Result<Any>) -> Void)
 }
 
 public protocol CancellableAsyncTask {
@@ -47,7 +47,7 @@ public protocol CancellableAsyncTask {
 public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
     private var job: (() throws -> T)?
     private let lock = Lock()
-    private var onResultBlocks = [(Result<Any>) -> Void]()
+    private var onResultBlocks = [(Result<T>) -> Void]()
     private var onCancelBlock: (() -> Void)?
     //fileprivate let dispatchGroup = DispatchGroup()
     private var catchBlocks = [(Error) -> Void]()
@@ -107,7 +107,7 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
                 result = newValue
 
                 for onResultBlock in self.onResultBlocks {
-                    onResultBlock(newValue.asResultAny())
+                    onResultBlock(newValue)
                 }
                 self.onResultBlocks.removeAll()
 
@@ -145,17 +145,13 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
         }
     }
 
-    public func onResult(_ block: @escaping (Result<Any>) -> Void) {
-        self.lock.synchronized {
-            if let result = self.result {
-                switch result {
-                case .value(let value):
-                    block(Result.value(value))
-                case .error(let error):
-                    block(Result.error(error))
-                }
-            } else {
-                self.onResultBlocks.append(block)
+    public func addResultHandler(_ block: @escaping (Result<Any>) -> Void) {
+        onResult { result in
+            switch result {
+            case .value(let value):
+                block(Result.value(value))
+            case .error(let error):
+                block(Result.error(error))
             }
         }
     }
@@ -163,6 +159,18 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
     public func onCancel(_ block: @escaping () -> Void) -> AsyncTask<T> {
         self.lock.synchronized {
             self.onCancelBlock = block
+        }
+        return self
+    }
+
+    @discardableResult
+    public func onResult(_ block: @escaping (Result<T>) -> Void) -> AsyncTask<T> {
+        self.lock.synchronized {
+            if let result = self.result {
+                block(result)
+            } else {
+                self.onResultBlocks.append(block)
+            }
         }
         return self
     }
@@ -213,7 +221,7 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
     public func await(timeout: DispatchTime = .distantFuture) throws -> T {
         assert(Thread.isMainThread == false)
         let semaphore = Semaphore()
-        self.onResult { result in
+        self.addResultHandler { result in
             semaphore.signal()
         }
         self.run()
@@ -257,12 +265,12 @@ public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture)
 public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, muteErrors: Bool = false) throws -> [Result<Any>?] {
     assert(Thread.isMainThread == false)
     let semaphore = Semaphore()
-    var results = Atomic(Array<Result<Any>?>(repeating: nil, count: tasks.count))
+    let results = Atomic(Array<Result<Any>?>(repeating: nil, count: tasks.count))
     var firstError: Error?
     var resultsCount = 0
     for i in 0..<tasks.count {
         let task = tasks[i]
-        task.onResult { result in
+        task.addResultHandler { result in
             var resume = false
             results.withWriteLock { results in
                 results[i] = result
