@@ -5,7 +5,7 @@
 
 import Foundation
 
-public enum DRYSwiftHelpersError: Error {
+public enum DRYSwiftHelpersError: Error, CustomStringConvertible {
     case semaphoreTimedOut
     case httpInvalidResponse
     case httpBadStatusCode(statusCode: Int, data: Data?)
@@ -20,7 +20,7 @@ public enum DRYSwiftHelpersError: Error {
             }
             fallthrough
         default:
-            return String(describing: self)
+            return String(reflecting: self)
         }
     }
 }
