@@ -5,22 +5,10 @@
 
 import Foundation
 
-public enum DRYSwiftHelpersError: Error, CustomStringConvertible {
+public enum DRYSwiftHelpersError: Error {
     case semaphoreTimedOut
     case httpInvalidResponse
     case httpBadStatusCode(statusCode: Int, data: Data?)
     case asyncTaskTimedOut
     case asyncTaskCancelled
-
-    public var description: String {
-        switch self {
-        case .httpBadStatusCode(let statusCode, let data):
-            if data != nil, let errorString = String(data: data!, encoding: .utf8) {
-                return "httpBadStatusCode(statusCode: \(statusCode), data: '\(errorString)'"
-            }
-            fallthrough
-        default:
-            return String(reflecting: self)
-        }
-    }
 }
