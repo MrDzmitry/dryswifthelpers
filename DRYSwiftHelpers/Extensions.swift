@@ -7,12 +7,12 @@ import Foundation
 
 
 extension URLRequest {
-    public func createAsyncTask(checkStatusCode: Bool = true) -> AsyncTask<(data: Data, httpResponse: HTTPURLResponse)> {
+    public func createAsyncTask(checkStatusCode: Bool = true, urlSession: URLSession = URLSession.shared) -> AsyncTask<(data: Data, httpResponse: HTTPURLResponse)> {
         return AsyncTask<(data: Data, httpResponse: HTTPURLResponse)> {
             var result: (Data, HTTPURLResponse)?
             var resultError: Error?
             let semaphore = Semaphore()
-            URLSession.shared.dataTask(with: self) { (data: Data?, response: URLResponse?, error: Error?) -> Void in
+            urlSession.dataTask(with: self) { (data: Data?, response: URLResponse?, error: Error?) -> Void in
                 defer {
                     semaphore.signal()
                 }
