@@ -8,39 +8,34 @@ import Foundation
 
 extension URLRequest {
     public func createAsyncTask(checkStatusCode: Bool = true, urlSession: URLSession = URLSession.shared) -> AsyncTask<(data: Data, httpResponse: HTTPURLResponse)> {
-        return AsyncTask<(data: Data, httpResponse: HTTPURLResponse)> {
-            var result: (Data, HTTPURLResponse)?
-            var resultError: Error?
-            let semaphore = Semaphore()
-            urlSession.dataTask(with: self) { (data: Data?, response: URLResponse?, error: Error?) -> Void in
-                defer {
-                    semaphore.signal()
-                }
-                if error != nil {
-                    resultError = error
-                    return
-                }
-                guard let response = response as? HTTPURLResponse else {
-                    resultError = DRYSwiftHelpersError.httpInvalidResponse
-                    return
-                }
-                if checkStatusCode == true && response.statusCode != 200 {
-                    resultError = DRYSwiftHelpersError.httpBadStatusCode(statusCode: response.statusCode, data: data)
-                    return
-                }
-                guard let data = data else {
-                    resultError = DRYSwiftHelpersError.httpInvalidResponse
-                    return
-                }
-                result = (data, response)
-            }.resume()
-            semaphore.wait()
-            if let error = resultError {
-                throw error
-            } else {
-                return result!
+        let task = AsyncTask<(data: Data, httpResponse: HTTPURLResponse)>()
+
+        let dataTask = urlSession.dataTask(with: self) { (data: Data?, response: URLResponse?, error: Error?) -> Void in
+            if error != nil {
+                task.setResult(.error(error!))
+                return
             }
+            guard let response = response as? HTTPURLResponse else {
+                task.setResult(.error(DRYSwiftHelpersError.httpInvalidResponse))
+                return
+            }
+            if checkStatusCode == true && response.statusCode != 200 {
+                task.setResult(.error(DRYSwiftHelpersError.httpBadStatusCode(statusCode: response.statusCode, data: data)))
+                return
+            }
+            guard let data = data else {
+                task.setResult(.error(DRYSwiftHelpersError.httpInvalidResponse))
+                return
+            }
+            task.setResult(.value((data, response)))
         }
+
+        task.cancellationHandler = {
+            dataTask.cancel()
+        }
+
+        dataTask.resume()
+        return task
     }
 }
 

@@ -48,12 +48,13 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
     private var job: (() throws -> T)?
     private let lock = Lock()
     private var onResultBlocks = [(Result<T>) -> Void]()
-    private var onCancelBlock: (() -> Void)?
     //fileprivate let dispatchGroup = DispatchGroup()
     private var catchBlocks = [(Error) -> Void]()
     private var successBlocks = [(T) -> Void]()
     private var finallyBlocks = [() -> Void]()
     private var result: Result<T>?
+
+    public var cancellationHandler: (() -> Void)?
 
     public var resultValue: T? {
         return lock.synchronized {
@@ -135,6 +136,7 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
                     }
                 }
                 self.finallyBlocks.removeAll()
+                self.cancellationHandler = nil
             }
         }
     }
@@ -154,13 +156,6 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
                 block(Result.error(error))
             }
         }
-    }
-
-    public func onCancel(_ block: @escaping () -> Void) -> AsyncTask<T> {
-        self.lock.synchronized {
-            self.onCancelBlock = block
-        }
-        return self
     }
 
     @discardableResult
@@ -240,11 +235,9 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
     }
 
     public func cancel() {
-        self.lock.synchronized {
-            if self.result == nil {
-                self.onCancelBlock?()
-            }
-        }
+        let cancellationHandler = self.cancellationHandler
+        self.setResult(.error(DRYSwiftHelpersError.asyncTaskCancelled))
+        cancellationHandler?()
     }
 }
 
