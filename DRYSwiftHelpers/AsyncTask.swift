@@ -87,17 +87,21 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
     }
 
     public func run() {
-        lock.synchronized {
-            if let job = self.job {
-                self.job = nil
-                DispatchQueue.global().async {
-                    do {
-                        let value = try job()
-                        self.setResult(.value(value))
-                    } catch {
-                        self.setResult(.error(error))
-                    }
-                }
+        DispatchQueue.global().async {
+            self.lock.lock()
+            let job = self.job
+            self.job = nil
+            self.lock.unlock()
+            
+            if job == nil {
+                return
+            }
+            
+            do {
+                let value = try job!()
+                self.setResult(.value(value))
+            } catch {
+                self.setResult(.error(error))
             }
         }
     }
