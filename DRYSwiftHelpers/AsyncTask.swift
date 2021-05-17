@@ -79,14 +79,12 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
     public init() {
     }
 
-    public init(paused: Bool = false, _ job: @escaping () throws -> T) {
+    public init(_ job: @escaping () throws -> T) {
         self.job = job
-        if paused == false {
-            run()
-        }
+        self.run()
     }
 
-    public func run() {
+    private func run() {
         DispatchQueue.global().async {
             self.lock.lock()
             let job = self.job
@@ -223,7 +221,7 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
         self.addResultHandler { result in
             semaphore.signal()
         }
-        self.run()
+        //self.run()
         do {
             try semaphore.wait(timeout: timeout)
         } catch {
