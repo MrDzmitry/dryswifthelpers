@@ -116,7 +116,7 @@ public class Semaphore {
     }
 
     public func wait() {
-        _ = semaphore.wait()
+        semaphore.wait()
     }
 
     public func wait(timeout: DispatchTime) throws {

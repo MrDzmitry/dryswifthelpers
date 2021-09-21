@@ -244,7 +244,7 @@ public class AsyncTask<T>: AsyncResultProvider, CancellableAsyncTask {
 }
 
 @discardableResult
-public func async<T>(_ job: @escaping () throws -> T) -> AsyncTask<T> {
+public func async1<T>(_ job: @escaping () throws -> T) -> AsyncTask<T> {
     return AsyncTask<T>(job)
 }
 
@@ -257,7 +257,7 @@ public func await<T>(task: AsyncTask<T>, timeout: DispatchTime = .distantFuture)
 */
 
 @discardableResult
-public func await(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, muteErrors: Bool = false) throws -> [Result<Any>?] {
+public func await1(tasks: [AsyncResultProvider], timeout: DispatchTime = .distantFuture, muteErrors: Bool = false) throws -> [Result<Any>?] {
     assert(Thread.isMainThread == false)
     let semaphore = Semaphore()
     let results = Atomic(Array<Result<Any>?>(repeating: nil, count: tasks.count))

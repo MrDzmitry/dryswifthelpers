@@ -5,13 +5,13 @@
 // Based on https://blog.scottlogic.com/2015/02/05/swift-events.html
 //
 
-public protocol EventHandler: class {
+public protocol EventHandler: AnyObject {
     @discardableResult
     func addToContainer(_ container: EventHandlersContainer) -> EventHandler
     func dispose()
 }
 
-protocol Invocable: class {
+protocol Invocable: AnyObject {
     func invoke(data: Any)
 }
 
